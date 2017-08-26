@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"runtime"
+	"strings"
 	"unsafe"
 
 	"./utils"
@@ -17,6 +20,9 @@ type VertexFormat struct {
 	pos   mgl32.Vec3
 	color mgl32.Vec4
 }
+
+var vertexDatas []VertexFormat
+var indexDatas []uint32
 
 // 頂点シェーダプログラム
 var vertexShader = `
@@ -93,17 +99,7 @@ func main() {
 	gl.UseProgram(program)
 	gl.BindFragDataLocation(program, 0, gl.Str("fc\x00"))
 
-	// 頂点データ定義
-	vertexData := []VertexFormat{
-		{mgl32.Vec3{-0.5, -0.5, 0.0}, mgl32.Vec4{1.0, 1.0, 1.0, 1.0}},
-		{mgl32.Vec3{0.5, 0.5, 0.0}, mgl32.Vec4{1.0, 0.0, 0.0, 1.0}},
-		{mgl32.Vec3{0.5, -0.5, 0.0}, mgl32.Vec4{0.0, 1.0, 0.0, 1.0}},
-		{mgl32.Vec3{-0.5, 0.5, 0.0}, mgl32.Vec4{0.0, 0.0, 1.0, 1.0}},
-	}
-
-	vertices := []uint32{
-		0, 2, 1, 3,
-	}
+	loadModel()
 
 	// 頂点情報作成
 	var vao uint32
@@ -112,16 +108,17 @@ func main() {
 
 	defer gl.BindVertexArray(0)
 
-	fmt.Printf("unsafe.Sizeof(vertexData) = %d", unsafe.Sizeof(vertexData))
 	var vbo uint32
 	gl.GenBuffers(1, &vbo)
 	gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
-	gl.BufferData(gl.ARRAY_BUFFER, ((3*4)+(4*4))*4, gl.Ptr(vertexData), gl.STATIC_DRAW)
+	dataSize := len(vertexDatas) * int(unsafe.Sizeof(vertexDatas[0]))
+	gl.BufferData(gl.ARRAY_BUFFER, dataSize, gl.Ptr(vertexDatas), gl.STATIC_DRAW)
 
 	var ibo uint32
 	gl.GenBuffers(1, &ibo)
 	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo)
-	gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(vertices)*4, gl.Ptr(vertices), gl.STATIC_DRAW)
+	dataSize = len(indexDatas) * int(unsafe.Sizeof(indexDatas[0]))
+	gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, dataSize, gl.Ptr(indexDatas), gl.STATIC_DRAW)
 
 	vertAttrib := uint32(gl.GetAttribLocation(program, gl.Str("pv\x00")))
 	gl.EnableVertexAttribArray(vertAttrib)
@@ -149,11 +146,11 @@ func main() {
 		gl.UseProgram(program)
 
 		// 各行列設定
-		projection := mgl32.Perspective(mgl32.DegToRad(45.0), float32(1280)/960, 0.1, 10.0)
+		projection := mgl32.Perspective(mgl32.DegToRad(45.0), float32(1280)/960, 1.0, 10000.0)
 		projectionUniform := gl.GetUniformLocation(program, gl.Str("projection\x00"))
 		gl.UniformMatrix4fv(projectionUniform, 1, false, &projection[0])
 
-		camera := mgl32.LookAtV(mgl32.Vec3{3, 3, 3}, mgl32.Vec3{0, 0, 0}, mgl32.Vec3{0, 1, 0})
+		camera := mgl32.LookAtV(mgl32.Vec3{0, 10, 10}, mgl32.Vec3{0, 3, 0}, mgl32.Vec3{0, 1, 0})
 		cameraUniform := gl.GetUniformLocation(program, gl.Str("camera\x00"))
 		gl.UniformMatrix4fv(cameraUniform, 1, false, &camera[0])
 
@@ -170,9 +167,48 @@ func main() {
 		gl.BindVertexArray(vao)
 
 		// 描画
-		gl.DrawElements(gl.TRIANGLE_FAN, 4, gl.UNSIGNED_INT, gl.PtrOffset(0))
+		gl.DrawElements(gl.TRIANGLES, int32(len(vertexDatas)), gl.UNSIGNED_INT, gl.PtrOffset(0))
 
 		window.SwapBuffers()
 		glfw.PollEvents()
+	}
+}
+
+func loadModel() {
+	fmt.Println("test")
+
+	file, err := os.Open(`./gopher.obj`)
+	if err != nil {
+		// Openエラー処理
+	}
+	defer file.Close()
+
+	sc := bufio.NewScanner(file)
+	for i := 1; sc.Scan(); i++ {
+		if err := sc.Err(); err != nil {
+			// エラー処理
+			break
+		}
+
+		// 頂点座標読み込み
+		if strings.Contains(sc.Text(), "v ") {
+			var vertexData VertexFormat
+
+			fmt.Sscanf(sc.Text(), "v %f %f %f", &vertexData.pos[0], &vertexData.pos[1], &vertexData.pos[2])
+			vertexData.color[0] = 1.0
+			vertexData.color[1] = 1.0
+			vertexData.color[2] = 1.0
+			vertexData.color[3] = 1.0
+
+			vertexDatas = append(vertexDatas, vertexData)
+		}
+
+		// インデックスバッファ読み込み
+		if strings.Contains(sc.Text(), "f ") {
+			var a, b, c uint32
+			fmt.Sscanf(sc.Text(), "f %d %d %d", &a, &b, &c)
+
+			indexDatas = append(indexDatas, a, b, c)
+		}
 	}
 }
