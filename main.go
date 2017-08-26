@@ -3,21 +3,32 @@ package main
 import (
 	"fmt"
 	"runtime"
+	"unsafe"
 
 	"./utils"
 
 	"github.com/go-gl/gl/v4.1-core/gl"
 	"github.com/go-gl/glfw/v3.2/glfw"
+	"github.com/go-gl/mathgl/mgl32"
 )
+
+// 頂点フォーマット
+type VertexFormat struct {
+	pos   mgl32.Vec3
+	color mgl32.Vec4
+}
 
 // 頂点シェーダプログラム
 var vertexShader = `
 #version 410
 
 in vec3 pv;
+in vec4 in_vertexColor;
+out vec4 out_vertexColor;
 
 void main() {
 	gl_Position = vec4(pv, 1);
+	out_vertexColor = in_vertexColor;
 }
 ` + "\x00"
 
@@ -25,10 +36,11 @@ void main() {
 var fragmentShader = `
 #version 410
 
+in vec4 out_vertexColor;
 out vec4 fc;
 
 void main() {
-	fc = vec4(1.0, 0.0, 0.0, 1.0);
+	fc = out_vertexColor;
 }
 ` + "\x00"
 
@@ -75,31 +87,32 @@ func main() {
 		panic(err)
 	}
 	gl.UseProgram(program)
-
 	gl.BindFragDataLocation(program, 0, gl.Str("fc\x00"))
 
-	points := []float32{
-		-0.5, -0.5,
-		0.5, 0.5,
-		0.5, -0.5,
-		-0.5, 0.5,
+	// 頂点データ定義
+	vertexData := []VertexFormat{
+		{mgl32.Vec3{-0.5, -0.5, 0.0}, mgl32.Vec4{1.0, 1.0, 1.0, 1.0}},
+		{mgl32.Vec3{0.5, 0.5, 0.0}, mgl32.Vec4{1.0, 0.0, 0.0, 1.0}},
+		{mgl32.Vec3{0.5, -0.5, 0.0}, mgl32.Vec4{0.0, 1.0, 0.0, 1.0}},
+		{mgl32.Vec3{-0.5, 0.5, 0.0}, mgl32.Vec4{0.0, 0.0, 1.0, 1.0}},
 	}
 
 	vertices := []uint32{
 		0, 2, 1, 3,
 	}
 
-	// configure the vertex data
+	// 頂点情報作成
 	var vao uint32
 	gl.GenVertexArrays(1, &vao)
 	gl.BindVertexArray(vao)
 
 	defer gl.BindVertexArray(0)
 
+	fmt.Printf("unsafe.Sizeof(vertexData) = %d", unsafe.Sizeof(vertexData))
 	var vbo uint32
 	gl.GenBuffers(1, &vbo)
 	gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
-	gl.BufferData(gl.ARRAY_BUFFER, len(points)*4, gl.Ptr(points), gl.STATIC_DRAW)
+	gl.BufferData(gl.ARRAY_BUFFER, ((3*4)+(4*4))*4, gl.Ptr(vertexData), gl.STATIC_DRAW)
 
 	var ibo uint32
 	gl.GenBuffers(1, &ibo)
@@ -108,9 +121,13 @@ func main() {
 
 	vertAttrib := uint32(gl.GetAttribLocation(program, gl.Str("pv\x00")))
 	gl.EnableVertexAttribArray(vertAttrib)
-	gl.VertexAttribPointer(vertAttrib, 2, gl.FLOAT, false, 2*4, gl.PtrOffset(0))
+	gl.VertexAttribPointer(vertAttrib, 3, gl.FLOAT, false, 4*7, gl.PtrOffset(0))
 
-	// global settings
+	vertAttrib = uint32(gl.GetAttribLocation(program, gl.Str("in_vertexColor\x00")))
+	gl.EnableVertexAttribArray(vertAttrib)
+	gl.VertexAttribPointer(vertAttrib, 4, gl.FLOAT, false, 4*7, gl.PtrOffset(3*4))
+
+	// 基本設定
 	gl.Enable(gl.DEPTH_TEST)
 	gl.DepthFunc(gl.LESS)
 	gl.ClearColor(0.0, 0.0, 1.0, 1.0)
