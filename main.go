@@ -22,12 +22,16 @@ type VertexFormat struct {
 var vertexShader = `
 #version 410
 
+uniform mat4 projection;
+uniform mat4 camera;
+uniform mat4 model;
+
 in vec3 pv;
 in vec4 in_vertexColor;
 out vec4 out_vertexColor;
 
 void main() {
-	gl_Position = vec4(pv, 1);
+	gl_Position = projection * camera * model * vec4(pv, 1);
 	out_vertexColor = in_vertexColor;
 }
 ` + "\x00"
@@ -132,15 +136,40 @@ func main() {
 	gl.DepthFunc(gl.LESS)
 	gl.ClearColor(0.0, 0.0, 1.0, 1.0)
 
+	angle := 0.0
+	previousTime := glfw.GetTime()
+
 	// メインループ
 	for !window.ShouldClose() {
 
+		// 画面クリア
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
+		// 使用するシェーダを洗濯
 		gl.UseProgram(program)
 
+		// 各行列設定
+		projection := mgl32.Perspective(mgl32.DegToRad(45.0), float32(1280)/960, 0.1, 10.0)
+		projectionUniform := gl.GetUniformLocation(program, gl.Str("projection\x00"))
+		gl.UniformMatrix4fv(projectionUniform, 1, false, &projection[0])
+
+		camera := mgl32.LookAtV(mgl32.Vec3{3, 3, 3}, mgl32.Vec3{0, 0, 0}, mgl32.Vec3{0, 1, 0})
+		cameraUniform := gl.GetUniformLocation(program, gl.Str("camera\x00"))
+		gl.UniformMatrix4fv(cameraUniform, 1, false, &camera[0])
+
+		time := glfw.GetTime()
+		elapsed := time - previousTime
+		previousTime = time
+
+		angle += elapsed
+		model := mgl32.HomogRotate3D(float32(angle), mgl32.Vec3{0, 1, 0})
+		modelUniform := gl.GetUniformLocation(program, gl.Str("model\x00"))
+		gl.UniformMatrix4fv(modelUniform, 1, false, &model[0])
+
+		// バッファをバインド
 		gl.BindVertexArray(vao)
 
+		// 描画
 		gl.DrawElements(gl.TRIANGLE_FAN, 4, gl.UNSIGNED_INT, gl.PtrOffset(0))
 
 		window.SwapBuffers()
